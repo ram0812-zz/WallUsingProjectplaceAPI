@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark" 
+					   xmlns:mx="library://ns.adobe.com/flex/mx"
+					   xmlns:com="com.*"
+					   minWidth="500"
+					   minHeight="500" 
+					   width="600"
+					   height="800"
+					   alwaysInFront="false"
+					   autoLayout="true"
+					   title="Conversations"
+					   showStatusBar="false"
+					   creationComplete="init()" xmlns:view="com.view.*"> 
+	<fx:Script>
+		<![CDATA[
+			import com.adobe.serialization.json.JSON;
+			import com.adobe.serialization.json.JSONDecoder;
+			import com.api.CoWorkers;
+			import com.api.UserInfo;
+			import com.api.UserProjects;
+			import com.hurlant.crypto.symmetric.NullPad;
+			import com.pages.MainPage;
+			import com.ppstatic.Config;
+			import com.projectplace.OAuth.OAuthLogin;
+			import com.utils.ApiCallBacks;
+			import com.utils.ApiRequests;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.controls.HTML;
+			import mx.core.INavigatorContent;
+			import mx.core.UIComponent;
+			import mx.utils.URLUtil;
+			
+			import org.bytearray.gif.events.GIFPlayerEvent;
+			import org.bytearray.gif.player.GIFPlayer;
+			import org.flaircode.oauth.IOAuth;
+			import org.flaircode.oauth.OAuth;
+			import org.iotashan.oauth.OAuthToken;
+			import org.iotashan.utils.OAuthUtil;
+
+			private var auth:IOAuth;
+			private var ACCESS_TOKEN_LOCAL_STORAGE:String = "OAUTHACCESSTOKEN";			
+			private var requestToken:OAuthToken;
+			private var accessToken:OAuthToken;
+			private var player:GIFPlayer = null;
+			
+			public static var apirequest:ApiRequests;
+			//public static var ppsocket:PPSocketConnection = null;
+			public var conv:MainPage;
+			public static var oAuthLogin:OAuthLogin = new OAuthLogin(Config.consumenrKey, Config.consumenrSecret, Config.serverName);
+			private var user:UserInfo;
+			
+			
+			import mx.events.CloseEvent;
+						
+			private var icon:Loader = new Loader();
+			private var systray:SystemTrayIcon;
+			private var dock:DockIcon;
+			private var openAirCommand:NativeMenuItem;
+			private var restoreCommand:NativeMenuItem;
+			private var exitCommand:NativeMenuItem;
+			
+			private function loadTrayIcon(_sysTray:Boolean, _dock:Boolean):void {
+				if (_sysTray) {
+					icon.contentLoaderInfo.addEventListener(Event.COMPLETE, iconLoadComplete);
+					icon.load(new URLRequest("assets/images/pp-active_16x16.png"));
+					systray=NativeApplication.nativeApplication.icon as SystemTrayIcon;
+					systray.tooltip="DeskTube";
+					systray.menu=createIconMenu(_sysTray);
+				}
+				if (_dock) {
+					icon.contentLoaderInfo.addEventListener(Event.COMPLETE,iconLoadComplete);
+					icon.load(new URLRequest("assets/images/pp-active_128x128.png"));
+					//NativeApplication.nativeApplication.addEventListener(InvokeEvent.INVOKE, undock);
+					dock=NativeApplication.nativeApplication.icon as DockIcon;
+					dock.menu=createIconMenu(_sysTray);
+				}
+			}
+			
+			private function iconLoadComplete(e:Event):void {
+				NativeApplication.nativeApplication.icon.bitmaps=[e.target.content.bitmapData];
+			}
+			
+			private function createIconMenu(_sysTray:Boolean):NativeMenu {
+				//addEventListener(Event.CLOSING,onMainWindowClosing);
+				addExitEvents();
+				var iconMenu:NativeMenu = new NativeMenu();
+				openAirCommand = new NativeMenuItem("Open Conversations")
+				restoreCommand = new NativeMenuItem("Restore");
+				exitCommand = new NativeMenuItem("Exit");
+
+				if (_sysTray) {
+					iconMenu.addItem(openAirCommand);
+					openAirCommand.addEventListener(Event.SELECT, openAir);
+					iconMenu.addItem(new NativeMenuItem("", true));
+					iconMenu.addItem(restoreCommand);
+					restoreCommand.addEventListener(Event.SELECT, undock);
+					iconMenu.addItem(exitCommand);
+					exitCommand.addEventListener(Event.SELECT, closeApp);
+				}
+				return iconMenu;
+			}
+			private function addExitEvents():void
+			{
+				if (NativeApplication.supportsMenu)
+				{ // we are on a Mac
+					//this.nativeWindow.addEventListener(InvokeEvent.INVOKE, handleAppInvoke);
+					NativeApplication.nativeApplication.addEventListener(InvokeEvent.INVOKE, handleAppInvoke);
+					this.nativeWindow.addEventListener(Event.CLOSING, handleAppHide);
+					NativeApplication.nativeApplication.addEventListener(Event.EXITING, handleAppExit);
+					NativeApplication.nativeApplication.autoExit = false;
+				} else 
+				{ // we are on a Windows machine
+					this.nativeWindow.addEventListener(Event.CLOSING, handleAppClosing);
+					NativeApplication.nativeApplication.autoExit = true;
+				}
+			}
+			
+			// active that application
+			private function handleAppInvoke(event:InvokeEvent):void
+			{
+				
+				if (conv)
+					conv.updates.resetTimer(true);
+				this.nativeWindow.activate();
+			}
+			
+			// close all open windows
+			private function handleAppClosing(event:Event):void
+			{
+				event.preventDefault();
+				for (var i:int = NativeApplication.nativeApplication.openedWindows.length - 1; i >= 0; --i) {
+					NativeWindow(NativeApplication.nativeApplication.openedWindows[i]).close();
+				}
+			}
+			
+			// hide the application instead of closing it
+			private function handleAppHide(event:Event):void
+			{
+				if( this.nativeWindow.visible ) 
+				{ // if the window is visible the event behaviour is canceld and the window is hidden
+					event.preventDefault();
+					this.nativeWindow.visible = false;
+					if (conv)
+						conv.updates.resetTimer(false);
+				}
+				
+			}
+			
+			// close all open windows, remove event listener for hiding application and close applicatin
+			private function handleAppExit(event:Event):void
+			{
+				this.nativeWindow.removeEventListener(Event.CLOSING, handleAppHide);
+				
+				for (var i:int = NativeApplication.nativeApplication.openedWindows.length - 1; i >= 0; --i) {
+					NativeWindow(NativeApplication.nativeApplication.openedWindows[i]).close();
+				}
+				this.close();
+			}
+			
+			private function openAir(e:Event):void {
+				stage.nativeWindow.alwaysInFront = true;
+				stage.nativeWindow.orderToFront();
+				undock(e);
+			}
+			
+			private function undock(e:Event):void {
+				this.visible = true;
+				if (conv)
+					conv.updates.resetTimer(true);
+
+			}
+			private function closeApp(e:Event):void {
+				stage.nativeWindow.close();
+			}
+			
+			public function init():void {
+				this.addElement(oAuthLogin);
+				this.addEventListener( Event.ADDED_TO_STAGE , addedToStageHandler );
+				oAuthLogin.initiateLogin(loginCallback);
+				progressLabel.text = "";
+//				NativeApplication.nativeApplication.startAtLogin = true;
+				NativeApplication.nativeApplication.addEventListener
+					(Event.ACTIVATE, __activate__);
+				NativeApplication.nativeApplication.addEventListener
+					(Event.DEACTIVATE, __deactivate__);
+				loadTrayIcon(NativeApplication.supportsSystemTrayIcon, NativeApplication.supportsDockIcon);
+				loadImage();
+				
+			}
+			
+			private function __activate__($event:Event):void {
+				stage.frameRate = 12;
+				if(conv)
+					conv.updates.resetTimer(true);
+			}
+			private function __deactivate__ ($event:Event):void {
+				stage.frameRate = 0.1;
+				if (conv)
+					conv.updates.resetTimer(false);
+				/*var openedWindows:Array = nativeApplication.openedWindows;
+				var i:uint;
+				var count:uint = openedWindows.length;
+				for(i; i < count; i++)
+				{
+					openedWindows[i].close();
+				}*/
+			}
+			
+			private function addedToStageHandler( event:Event ):void
+			{
+				stage.align=StageAlign.TOP_LEFT;
+				stage.scaleMode=StageScaleMode.NO_SCALE;
+				
+				stage.addEventListener(Event.RESIZE, reSize);
+				stage.dispatchEvent(new Event(Event.RESIZE));
+				setLoadingContainerText("initiate");
+				
+			}
+			
+			private function reSize(e:Event):void
+			{
+				setLoadingContainerText("initiate");		
+			}
+			
+			private function setLoadingContainerText(contentType:String):void
+			{
+				loadingContainer.includeInLayout = loadingContainer.visible = true;
+				progress.x = stage.stageWidth/2 - progress.width/2 - 4;
+				progress.y = stage.stageHeight/2 - progress.height/2;
+				if (contentType == "initiate")
+				{
+					progressLabel.text = "";
+					progressLabel.verticalCenter = progress.height + 8;
+					progressLabel.horizontalCenter = progress.x/2 - 2;
+				}
+				else if (contentType == "loadConversations")
+				{
+					progressLabel.text = "Loading conversations...";
+					progressLabel.verticalCenter = progress.height + 8;
+					progressLabel.horizontalCenter = progress.x/2 - 20;
+				}
+				else if (contentType == "refresh")
+				{
+					progressLabel.text = "Refreshing conversations...";
+					progressLabel.verticalCenter = progress.height + 8;
+					progressLabel.horizontalCenter = progress.x/2 - 25;	
+				}
+				else if (contentType == "connectionLost")
+				{
+					progressLabel.text = "Internet connection reset! Refreshing conversations";					
+					progressLabel.verticalCenter = progress.height + 8;
+					progressLabel.horizontalCenter = progress.x/2 - 50;
+					
+				}
+				else if (contentType == "logout")
+				{
+					progressLabel.text = "Loging Out...";
+					progressLabel.verticalCenter = progress.height + 8;
+					progressLabel.horizontalCenter = progress.x/2 - 8;
+				}
+			}
+			
+			public function loginCallback(auth:IOAuth, accessToken:OAuthToken):void{
+				//setLoadingContainerText("initiate");
+				apirequest = new ApiRequests(auth, accessToken);
+				user = new UserInfo();
+				user.getUserInfo(userReadSuccess);
+			}
+			
+			public function userReadSuccess(userObj:Object, userReadFail:Boolean=false):void{
+				if (userReadFail){
+					reLogin();
+				}
+				else{
+					setLoadingContainerText("loadConversations");
+					//var coWorkers:CoWorkers = new CoWorkers();
+					//coWorkers.getCoWorkers(coWorkersReadSuccess);
+					getConversations();
+					unLoadImage();
+				}	
+			}
+			
+			private function getConversations():void
+			{
+				if (conv == null)
+				{
+					conv = new MainPage();
+					this.addElement(conv);
+					conv.showAllPosts(hideLoader);
+					var coWorkers:CoWorkers = new CoWorkers();
+					coWorkers.getCoWorkers(userProjectSuccess);
+					
+				}
+				
+			}
+
+			/*
+			public function coWorkersReadSuccess(coWorkersObj:Object, coWorkersReadFail:Boolean=false):void{
+				if (coWorkersReadFail)
+				{
+					reLogin();
+				}
+				else
+				{
+
+				}	
+			}*/
+			
+			public function userProjectSuccess(coWorkersObj:Object, coWorkersReadFail:Boolean=false):void{
+				if (coWorkersReadFail)
+				{
+					reLogin();
+				}
+				else
+				{
+					var userProjects:UserProjects = new UserProjects();
+					userProjects.getUserProjects(collectProjects);
+							
+				}
+			}
+			
+			private function collectProjects(projects:Array):void
+			{
+				user.projects = new ArrayCollection(projects);
+			}
+			
+			private function hideLoader():void
+			{
+				loadingContainer.includeInLayout = loadingContainer.visible = false;
+			}
+			
+			public function refreshContents():void
+			{
+				this.conv.removeAllElements();
+				this.removeElement(this.conv);
+				conv = null;
+				//var coWorkers:CoWorkers = new CoWorkers();
+				//coWorkers.getCoWorkers(coWorkersReadSuccess);
+				getConversations();
+				setLoadingContainerText("refresh");
+			}
+			
+			public function connectionLostRefresh():void
+			{
+				setLoadingContainerText("connectionLost");
+				this.refreshContents();
+				unLoadImage();
+			}			
+			
+			public function reLogin():void
+			{
+				setLoadingContainerText("logout");
+				oAuthLogin.logout();
+				if (conv)
+				removeElement(conv);
+				conv = null;
+				oAuthLogin.reLogin();
+				unLoadImage();
+				//ppsocket.closeConnection();
+				//ppsocket = null;
+			}
+			
+			public function loadImage():void 
+			{
+				if (!player)
+				{
+					var uiComp:UIComponent = new UIComponent();
+					player = new GIFPlayer();
+					uiComp.addChild(player);
+					player.addEventListener(GIFPlayerEvent.COMPLETE, loadImageComplete);	    
+					player.load(new URLRequest("assets/images/pploading.gif"));
+					
+					progress.addChild(uiComp);
+					progress.visible = true;
+					progressLabel.visible = true;
+				}
+				else
+					player.play();
+			}
+			public function loadImageComplete(e:Event):void {
+				    player.play();
+			}
+			
+			public function unLoadImage():void {
+				    player.stop();
+			}
+			
+		]]>
+	</fx:Script>
+	<fx:Style source="assets/css/ConversationStyle.css" />
+	<!--
+	<s:BorderContainer id="controlBox" height="38" width="100%"
+	backgroundColor="0xFFFFC2">
+	<s:hideEffect>
+	<mx:Fade />
+	</s:hideEffect>
+	<s:showEffect>
+	<mx:Fade duration="500" />
+	</s:showEffect>
+	<s:HGroup paddingLeft="10">
+	<s:Label height="38" id="reloadProgressLabel" verticalAlign="middle" text="Reloading all conversations..." />
+	<mx:VBox id="reloadProgress" creationComplete="loadImage()" visible="true" verticalAlign="middle" horizontalAlign="center">
+	</mx:VBox>
+	</s:HGroup>
+	
+	</s:BorderContainer>
+	-->
+	<s:BorderContainer id="loadingContainer" includeInLayout="false" width="100%" height="100%" borderVisible="false">
+		<mx:VBox id="progress" visible="false" height="32" width="32">
+		</mx:VBox>
+		<s:Label width="100%" id="progressLabel" visible="false" text="Loading..." />
+	</s:BorderContainer>
+</s:WindowedApplication>

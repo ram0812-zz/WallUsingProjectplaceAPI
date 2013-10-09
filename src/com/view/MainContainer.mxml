@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:SkinnableContainer xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx"
+		 xmlns:components="com.components.*"
+		 width="100%" height="100%"
+		 visible="false" creationComplete="init()"
+         styleName="appBackground">
+	<fx:Script>
+		<![CDATA[
+			import caurina.transitions.Tweener;
+			
+			import com.api.CoWorkers;
+			import com.api.UserInfo;
+			import com.api.UserProjects;
+			import com.components.AtRefSelector;
+			import com.components.NotifyUsersPopUp;
+			import com.components.SelectProjectsPopUp;
+			import com.objects.CommentObject;
+			import com.objects.PostObject;
+			import com.utils.ApiCallBacks;
+			import com.utils.Utils;
+			import com.view.renderers.PostRenderer;
+			
+			import flash.ui.Keyboard;
+			import flash.utils.getQualifiedClassName;
+			
+			import flashx.textLayout.tlf_internal;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.controls.Menu;
+			import mx.core.UIComponent;
+			import mx.effects.AnimateProperty;
+			import mx.events.FlexEvent;
+			import mx.events.ItemClickEvent;
+			import mx.events.MenuEvent;
+			import mx.events.PropertyChangeEvent;
+			import mx.managers.PopUpManager;
+			
+			import org.bytearray.gif.events.GIFPlayerEvent;
+			import org.bytearray.gif.player.GIFPlayer;
+			
+			import spark.components.DataGroup;
+			import spark.events.IndexChangeEvent;
+			import spark.layouts.supportClasses.LayoutBase;
+				
+			private var projectId:String = null;
+			private var projects:ArrayCollection;
+			private var atReferenceIds:Array = new Array();
+			private var atReferenceObjects:ArrayCollection;
+			private var attachment:Boolean = false; 
+			private var file:File;
+			private var atRefSel:AtRefSelector;
+			private var notify:NotifyUsersPopUp;
+			private var selectProject:SelectProjectsPopUp;
+
+			private function init():void
+			{
+				shareBox.visible = shareBox.includeInLayout = false;
+				var user:Object = UserInfo.getUserObj();
+				Utils.setAvatar(userImage, user.id, 30)
+				userFullName.label = user.sort_name;
+				setStyle("verticalScrollPolicy","auto");
+				shareBoxInitial.setStyle("cornerRadius", 10);
+				//loadImage(false);
+			}
+			
+			private function hideInitialTextbox():void
+			{
+				shareBoxInitial.visible = shareBoxInitial.includeInLayout = false;
+				shareBox.visible = shareBox.includeInLayout = true;
+				addAtRef();
+				callLater(shareBox.setFocus);
+			}
+
+			private function showProjects():void 
+			{
+				selectProject = new SelectProjectsPopUp(shareBox.parentApplication.parent, showProjectsCallBack);	
+			}
+			
+			private function showProjectsCallBack(selectedItem:Object):void
+			{
+				projectList.text = "Project: " +  selectedItem.name;
+				projectList.styleName = "textColorGrayBold";
+				projectId = selectedItem.id;
+				setAddPostButton();
+			}
+			
+			private function addAtRef():void
+			{
+				atReferenceIds = new Array();
+				this.atRefSel = new AtRefSelector(shareBox);
+			}
+			
+			private function addPost():void
+			{
+				if (!projectId)
+				{
+					showProjects();
+				}
+				else
+				{
+					loadImage(true);
+					if (shareBox.text && projectId)
+					{
+						postAttachmentContainer.visible = postAttachmentContainer.includeInLayout = false;
+						//addPostButton.enabled = false;
+						showAddPostProgress();
+						var text:String = shareBox.text;
+						text = text.replace(/\t/g, '    ')
+						var atRefObjects:ArrayCollection = this.atRefSel.getAtRefObjects();
+	
+						if (atRefObjects.length)
+						{
+							for each(var refrence:Object in atRefObjects)
+							{
+								var index:Number = text.search(String(refrence.input_name));
+								if (index != -1){
+									text = text.replace(String(refrence.input_name), '@' + refrence.id);
+									atReferenceIds.push(refrence.id);
+								}
+							}
+						}
+						this.parentApplication.conv.addPost(projectId, text, atReferenceIds, file, attachment, addPostResponse)
+						
+					}
+					else
+					{
+						Alert.show("Project Not selected");
+					}
+				}
+			}
+			
+			private function addPostResponse(newPostObj:Object):void
+			{
+				unLoadImage(true);
+				if (newPostObj != null)
+				{
+					hideAddPostProgress();
+					this.parentApplication.conv.addPostToContainer(newPostObj, projectId, shareBox.text);
+					shareBox.text = "";
+					projectList.text = "";
+					projectId = null;
+					attachment = false;
+					atReferenceIds = new Array();
+					atReferenceObjects = new ArrayCollection();
+					setAddPostBoxHeight();
+				}
+				else
+				{
+					Alert.show("Your post cannot be added.");
+					hideAddPostProgress();
+				}
+				//projectList.text = "Select a project";
+				projectId = null;
+				//projectList.styleName = "textColorGray";
+			}
+			
+			private function attachFile():void
+			{
+				file = new File();
+				file.addEventListener(Event.SELECT, onSelectAttachment);
+				file.browseForOpen('Browse for Attachment');
+			}
+			
+			private function onSelectAttachment(e:Event):void
+			{
+				if ((file.size/(1024*1024)) <= 50)
+				{
+					attachment = true;
+					var denominator:Number = 1024*1024;
+					var fileSizeText:String = "MB";
+					if (file.size/denominator < 1)
+					{
+						fileSizeText = "KB";
+						denominator = 1024;
+					}
+					postAttachmentFile.text = file.name + " (" + Utils.formatDecimals(file.size/(denominator), 2) + " " + fileSizeText + ")";
+					postAttachmentContainer.visible = postAttachmentContainer.includeInLayout = true;
+				}
+				else
+					Alert.show("The file you want to upload is big!\nYou can only upload documents upto 50 MB");
+			}
+			
+			private function deleteAttachment():void
+			{
+				attachment = false;
+				postAttachmentFile.text = "";
+				postAttachmentContainer.visible = postAttachmentContainer.includeInLayout = false;
+			}
+		
+			private function setAddPostButton():void
+			{
+				projects = UserProjects.getProjects();
+;
+				if (!projects)
+				{
+					addPostButton.enabled = false;
+					addPostButton.label = "Please wait...";
+					return;
+				}
+				else if (projects.length == 1) // If the user is a member of one project we set the project ID, to enable the add post button
+				{
+					projectId = projects[0].id;
+					projectList.text = "Project: " + projects[0].name;
+				}
+							
+				if (actionBox.visible)
+				{
+					if (!projectId)
+					{
+						addPostButton.label = "Select a project";
+					}
+					if (projectId && shareBox.text)
+						addPostButton.label = "Add";
+				}
+			}
+			
+			private function createAndShowMenu():void 
+			{
+				var userMenu:Menu = Menu.createMenu(null, menuData, false);
+				userMenu.labelField="@label"
+				userMenu.addEventListener(MenuEvent.ITEM_CLICK, 
+					menuItemClickInfo);
+				userMenu.show(stage.width-95, 30);
+			}
+			
+			// The event listener for the itemClick event.
+			private function menuItemClickInfo(event:MenuEvent):void
+			{
+				//this.parentApplication.removeElementAt(1);
+				if (event.item.@type == "refresh")
+				{
+					this.parentApplication.refreshContents();
+					/*PPConversationWall.getInstance().parentApplication.removeElement(PPConversationWall.getInstance());
+					delete PPConversationWall.getInstance();
+					var conv:Controller = PPConversationWall.getInstance();
+					PPConversationWall.getInstance().parentApplication.addElement(conv);
+					PPConversationWall.conv = conv;
+					conv.showAllPosts();
+					var coWorkers:CoWorkers = new CoWorkers();
+					coWorkers.getCoWorkers();	
+					conv.validateNow();
+					*/
+				}
+				else if (event.item.@type == "logout") 
+				{
+					this.parentApplication.reLogin();
+				}
+				
+			}
+			
+			private var addPostPlayer:GIFPlayer;
+			private function loadImage(addPost:Boolean):void 
+			{	
+				var uiComp:UIComponent = null;
+				if (addPost)
+				{
+					if (addPostPlayer)
+						addPostPlayer.play();
+					else
+					{
+						addPostPlayer = new GIFPlayer();
+						uiComp = new UIComponent();
+						uiComp.addChild(addPostPlayer);
+						addPostProgress.addChild(uiComp);
+						addPostPlayer.addEventListener(GIFPlayerEvent.COMPLETE, addPostPlayerComplete);
+						addPostPlayer.load(new URLRequest("assets/images/loading-small.gif"));
+					}
+				}		
+			}
+			private function unLoadImage(addPost:Boolean = false):void 
+			{
+				if (addPost)
+					addPostPlayer.stop();
+			}
+			
+			private function addPostPlayerComplete(e:Event):void 
+			{
+				    addPostPlayer.play();
+			}
+			
+			private function showAddPostProgress():void
+			{
+				addPostProgress.includeInLayout = addPostProgress.visible = true;
+				addPostButton.includeInLayout = addPostButton.visible = false;
+			}
+			
+			private function hideAddPostProgress():void
+			{
+				addPostProgress.includeInLayout = addPostProgress.visible = false;
+				addPostButton.includeInLayout = addPostButton.visible = true;
+			}
+			
+			private function setAddPostBoxHeight():void
+			{
+				var minHeight:Number = 45;
+				if (shareBox.text)
+				{
+					actionBox.visible = actionBox.includeInLayout = true;
+					
+					//shareBox.validateNow();
+					addPostScroller.viewport.verticalScrollPosition = shareBox.height;
+				}
+				else
+				{
+					actionBox.visible = actionBox.includeInLayout = false;
+					shareBox.height = minHeight;
+					shareBox.resetHeight(minHeight);
+				}
+				setAddPostButton();
+			}
+			
+			private function showNotifyUsers():void
+			{
+				notify = new NotifyUsersPopUp(shareBox.parentApplication.parent, showNotifyCallBack);
+			}
+			
+			private function showNotifyCallBack(selectedItem:Object):void
+			{
+				shareBox.text = shareBox.text + " " + String(selectedItem.input_name) + " ";	
+			}
+			
+			public function showUpdateBox():void
+			{
+				updateBox.visible = true;
+			}
+			public function hideUpdateBox():void
+			{
+				updateBox.visible = false;
+			}
+			
+			
+			protected function moveIt():void
+			{
+				//var newScrollPos:Number = postList.scroller.viewport.contentHeight; 
+				//var scrollTime:Number = newScrollPos / postList.dataProvider.length * (5 * postList.scroller.viewport.height);
+				//Alert.show("scrollTime" + scrollTime); 
+				/*var scrollTime:Number = 5000000;
+				Tweener.addTween(postList.scroller.viewport, { verticalScrollPosition:newScrollPos, time:scrollTime, transition: "easeinoutsine" });
+				*/
+				/*var target:DataGroup = postList.dataGroup;
+				var animation:AnimateProperty = new AnimateProperty(target);
+				animation.property = "verticalScrollPosition";
+				animation.duration = 1000;
+				animation.toValue = newScrollPos;
+				animation.play();
+				*/
+			}
+			
+			protected function scrollPostList(event:KeyboardEvent):void
+			{
+		
+				event.stopPropagation();
+				//Alert.show("" + postList.scroller.viewport.contentHeight);
+			}
+			
+			protected function list_creationCompleteHandler( event:FlexEvent ) : void
+			{
+				// Does not work with mouse wheel or arrow buttons due to bug http://bugs.adobe.com/jira/browse/SDK-26533
+				/* list.scroller.verticalScrollBar.addEventListener( Event.CHANGE, verticalScrollBarChangeHandler ); */
+				//event.stopPropagation();
+			
+				//postList.scroller.verticalScrollBar.addEventListener( Event.CHANGE, propertyChangeHandler);
+				//postList.addEventListener(KeyboardEvent.KEY_DOWN, propertyChangeHandler);
+
+				//postList.scroller.viewport.addEventListener( ScrollEvent.SCROLL, propertyChangeHandler );
+				
+			}
+			
+			protected function propertyChangeHandler( event:Event ) : void 
+			{
+				
+				//if ( event.property == "verticalScrollPosition" ) 
+				{
+					var v:VerticalLayout = VerticalLayout(postList.layout);
+					var lastIndexInView:int = v.lastIndexInView;
+					if (v.fractionOfElementInView(lastIndexInView) < 1)
+						this.callLater(scrollGroup, [lastIndexInView]);
+				}
+				//var source:Scroller = event.currentTarget.parent.parent;
+					//var n:Number = source.viewport.verticalScrollPosition;
+					//moveIt();
+			}
+			
+			protected function scrollGroup(n:int):void
+			{
+				var scrollPoint : Point = postList.layout.getScrollPositionDeltaToElement( n );
+				//var duration : Number = ( Math.max( scrollPoint.y, postList.layout.target.verticalScrollPosition ) - Math.min( scrollPoint.y, postList.layout.target.verticalScrollPosition )) * .01;
+				postList.layout.verticalScrollPosition += scrollPoint.y;
+				//postList.scroller.viewport.verticalScrollPosition += scrollPoint.y;
+				var target:LayoutBase = postList.layout;
+				var animation:AnimateProperty = new AnimateProperty(target);
+				animation.property = "verticalScrollPosition";
+				animation.duration = 500;
+				animation.toValue = postList.layout.verticalScrollPosition;
+				animation.play();
+				//Tweener.addTween(postList.layout,{ verticalScrollPosition: scrollPoint.y , time:duration});
+			}
+			/*
+			protected function indexChangeHandler(event:Event):void
+			{
+				
+				Alert.show("" + getQualifiedClassName(event));
+				Alert.show("" + event.target.parent.parent.parent.parent.sele);
+				scrollGroup( evt.newIndex );
+				evt.target.invalidateDisplayList();
+				
+			}
+			
+			protected function scrollGroup(n:int):void
+			{
+				var scrollPoint : Point = postList.layout.getScrollPositionDeltaToElement( n );
+				var duration : Number = ( Math.max( scrollPoint.y, postList.layout.target.verticalScrollPosition ) - Math.min( scrollPoint.y, postList.layout.target.verticalScrollPosition )) * .01;
+				var target:DataGroup = postList.dataGroup;
+				var animation:AnimateProperty = new AnimateProperty(target);
+				animation.property = "verticalScrollPosition";
+				animation.duration = duration;
+				animation.toValue = scrollPoint.y;
+				animation.play();
+				Alert.show("" + duration);
+				//Tweener.addTween(postList.layout,{ verticalScrollPosition: scrollPoint.y , time:duration});
+			}
+			*/
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<fx:XML id="menuData">
+			<xmlRoot>
+				<menuitem type="refresh" label="Refresh"/>
+				<menuitem type="logout" label="Logout"/>
+			</xmlRoot>
+		</fx:XML>
+	</fx:Declarations>
+	
+		
+	<s:layout>
+		<s:VerticalLayout  />
+	</s:layout>
+			
+	<s:HGroup width="100%" height="20">
+		<s:HGroup width="60%" height="25">
+			<s:Image source="assets/images/pp_logo.png" width="118" height="25" />
+		</s:HGroup>
+		<s:HGroup id="controlBox" horizontalAlign="center" paddingTop="5" width="100%" height="20">
+			<s:BorderContainer id="updateBox" cornerRadius="4" backgroundColor="0xffffccc" borderColor="0xcccccc"
+							   height="25" visible="false">
+				<s:layout>
+					<s:HorizontalLayout />
+				</s:layout>
+				<s:HGroup width="100%" verticalAlign="middle"
+						  paddingTop="5" paddingLeft="5" paddingBottom="5" paddingRight="5"
+						  horizontalAlign="center">
+					<s:Label width="100%" id="progressLabel" styleName="textColorGray" verticalAlign="middle" text="You have new updates" />
+					<s:Image verticalCenter="0" verticalAlign="middle" source="assets/images/delete.png" click="hideUpdateBox()" />
+				</s:HGroup>
+			</s:BorderContainer>
+			<s:HGroup id="userDetails" width="100%" horizontalAlign="right" gap="0">
+				<s:Image id="userImage" width="30" height="30" skinClass="com.skins.CommentAvatarSkin" verticalCenter="middle" />
+				<mx:LinkButton height="30" id="userFullName" labelPlacement="left" icon="@Embed('assets/images/menubar.png')" click="createAndShowMenu()" />
+				<mx:Spacer width="5" />
+			</s:HGroup>
+		</s:HGroup>
+	</s:HGroup>
+	
+	<s:VGroup width="100%" paddingTop="10" maxHeight="500">
+		<s:Scroller id="addPostScroller" verticalScrollPolicy="auto" width="100%" height="100%">
+		<s:VGroup width="100%">
+			<s:HGroup width="100%" paddingTop="5" paddingLeft="15" paddingBottom="5" paddingRight="15">
+				<s:VGroup width="100%" depth="100">			
+						<s:TextArea id="shareBoxInitial" styleName="textInputColor" height="45"
+									 width="100%" verticalScrollPolicy="off" borderColor="0xcccccc"
+									 color="#cccccc" text="Inform, ask, discuss...use the @-sign to notify other people"									 
+									 mouseDown="hideInitialTextbox()" keyDown="hideInitialTextbox()">
+						</s:TextArea>
+						<components:DynamicTextArea id="shareBox" width="100%" minHeight="45" borderColor="0xcccccc" 
+													click="addAtRef()" change="setAddPostBoxHeight();"/>
+					<s:HGroup id="postAttachmentContainer" visible="false" includeInLayout="false" height="20" gap="4">
+						<s:Label id="postAttachmentFile" height="15" verticalAlign="middle" />
+						<mx:Image source="assets/images/attachment_delete.png" height="15" useHandCursor="true" buttonMode="true"
+								  click="deleteAttachment()" verticalAlign="middle" />
+					</s:HGroup>
+					<s:HGroup width="100%" paddingTop="3" id="actionBox" visible="false" includeInLayout="false">
+						<s:HGroup verticalAlign="middle" paddingTop="3" horizontalAlign="left">
+							<mx:Image verticalCenter="10" source="assets/images/attach.png" useHandCursor="true" buttonMode="true" click="attachFile()" />
+							<s:Label verticalCenter="10" text="Attach" styleName="textColorGray" useHandCursor="true" buttonMode="true" click="attachFile()" />
+							<mx:Image verticalAlign="middle" source="assets/images/notify.png" useHandCursor="true" buttonMode="true" click="showNotifyUsers()" />
+							<s:Label verticalAlign="middle" text="Notify" styleName="textColorGray" useHandCursor="true" buttonMode="true" click="showNotifyUsers()" />		
+						</s:HGroup>
+				
+						<s:HGroup width="100%" verticalAlign="middle" horizontalAlign="right" paddingTop="3">
+							<s:Label verticalCenter="10" id="projectList" toolTip="Click to change project" text=""
+									 styleName="textColorGrayBold" useHandCursor="true" buttonMode="true" 
+									 click="showProjects()" />
+							<mx:VBox id="addPostProgress" height="15" paddingRight="15" visible="false" includeInLayout="false" />
+							<s:Button id="addPostButton" styleName="addButton" label="Add" click="addPost()"/>
+						</s:HGroup>
+					</s:HGroup>
+				</s:VGroup>
+			</s:HGroup>
+			<s:Rect x="0" y="0" width="100%" height="2">
+				<s:fill>
+					<s:LinearGradient rotation="90">
+						<s:GradientEntry color="0xcccccc"/>
+						<s:GradientEntry color="0xffffff" ratio="0.5"/>
+					</s:LinearGradient>
+				</s:fill>
+			</s:Rect>
+		</s:VGroup>
+		</s:Scroller>
+	</s:VGroup>
+	
+	<s:Scroller width="100%" height="100%">
+		<s:VGroup paddingBottom="10">
+			<components:PPList id="postList"
+					width="100%" height="100%"
+                    itemRenderer="com.view.renderers.PostRenderer"
+				    styleName="postListBackground"	
+					horizontalCenter="0" verticalCenter="0"
+					verticalScrollPolicy="on" horizontalScrollPolicy="off"
+				    borderVisible="false"
+					/>	
+		</s:VGroup>
+	</s:Scroller>
+</s:SkinnableContainer>

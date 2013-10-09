@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:ItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx" 
+				xmlns:view="com.view.*"
+				implements="mx.core.IFactory"
+				click="clickHandler(event);"
+				>
+	<fx:Script>
+		<![CDATA[
+			import com.utils.Utils;
+
+			import mx.controls.Alert;
+			import mx.events.ItemClickEvent;
+
+			public function newInstance():* {
+			}
+			
+			
+			protected function clickHandler(evt:MouseEvent):void {
+				var e:ItemClickEvent = new ItemClickEvent(ItemClickEvent.ITEM_CLICK, true);
+				e.item = data;
+				e.index = itemIndex;
+				dispatchEvent(e);
+			}
+			
+			override public function set data(value:Object):void {
+				if (value == null) { return; }
+				super.data = value;
+				projectName.text = value.name;
+				value.input_name = value.id;
+			}
+		]]>
+	</fx:Script>
+	
+	<s:states>
+		<s:State name="normal" />
+		<s:State name="hovered" />
+	</s:states>
+	<s:Rect x="0" y="0"
+			height="100%" width="100%">
+		
+		<s:fill>
+			<s:LinearGradient>
+				<s:entries>
+					<mx:GradientEntry color.normal="0xfcfcfc" color.hovered="0xD6DEFF"/>
+				</s:entries>
+			</s:LinearGradient>
+		</s:fill>            
+	</s:Rect>
+
+	<s:HGroup width="100%" paddingTop="5" paddingLeft="5" paddingBottom="5" paddingRight="5">
+		<mx:Image id="projectAvatar" />
+		
+		<s:Label id="projectName"
+					width="100%"
+				    verticalAlign="middle"	
+					height="30"
+					/>
+	</s:HGroup>
+			
+</s:ItemRenderer>

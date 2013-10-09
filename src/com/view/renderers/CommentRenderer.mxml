@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:ItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx" 
+				xmlns:view="com.view.*"
+				xmlns:components="com.components.*"
+				implements="mx.core.IFactory"
+			    autoDrawBackground="false"	
+			    addedEffect="addEffect"
+			    >
+	<fx:Declarations>
+		<s:Fade id="addEffect" duration="1000" alphaFrom="0" alphaTo="1" />
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			import com.api.UserInfo;
+			import com.ppstatic.Config;
+			import com.skins.PostSkin;
+			import com.utils.Utils;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.core.UIComponent;
+			import mx.events.CloseEvent;
+			import mx.events.FlexEvent;
+			
+			import org.bytearray.gif.events.GIFPlayerEvent;
+			import org.bytearray.gif.player.GIFPlayer;
+			
+			private var user:Object = UserInfo.getUserObj();
+			
+			public function newInstance():* {
+			}
+			
+			
+			override public function set data(value:Object):void {
+				if (value == null || (data && data.id == value.id)) { return; }
+				super.data = value;
+				setData();
+				//dispatchEvent(new FlexEvent(FlexEvent.DATA_CHANGE));
+				//invalidateProperties();
+			}
+			
+			private function setData():void
+			{
+				setCommentSkin(data);
+				Utils.setAvatar(commentAvatar, data.createdByObj.id, 30);
+				
+				//commentAvatar.data = Utils.setAvatar(data.createdByObj.id, 30);
+				commentAuthorName.text = data.createdByObj.name;
+				
+				commentText.htmlText = Utils.makeLinksOfUrls(data.message);
+				commentTime.text = Utils.convertTime(data.createdTime);
+				
+				commentAttachmentText.text = "";
+				commentAttachmentGroup.visible = commentAttachmentGroup.includeInLayout = false;
+				if (data.attachmentObj){
+					commentAttachmentGroup.visible = commentAttachmentGroup.includeInLayout = true;
+					commentAttachmentText.text = data.attachmentObj.name;
+					commentAttachmentText.addEventListener(MouseEvent.CLICK, 
+						function(e:MouseEvent):void{ 
+							downloadFile(data.attachmentObj.id, data.attachmentObj.name);
+						});
+				}
+				deleteComment.visible = deleteComment.includeInLayout = false;
+			}
+			private function downloadFile(documentId:String, name:String):void{
+				
+				loadImage();
+				
+				downloadProgressGroup.visible = downloadProgressGroup.includeInLayout = true;
+				attachmentNameGroup.visible = attachmentNameGroup.includeInLayout = false;
+				
+				ProjectPlaceWall.apirequest.doDownload(function(e:Event):void{
+					var tempFileObj:File = Config.getFileStorageDir().resolvePath(name);
+					Utils.writeToFile(tempFileObj, e.currentTarget.data);		
+					tempFileObj.openWithDefaultApplication();
+					
+					unLoadImage();
+					downloadProgressGroup.visible = downloadProgressGroup.includeInLayout = false;
+					attachmentNameGroup.visible = attachmentNameGroup.includeInLayout = true;
+				},
+					function(e:Event):void{}, documentId);
+			}
+			
+			private function deleteCommentHandler(event:CloseEvent):void
+			{
+
+				if(event.detail == Alert.YES)
+				{
+					this.parentApplication.conv.deleteComment(data.post_id, data.id);
+				}
+			}
+			
+			private function deleteCommentFunc():void
+			{
+				Alert.show("Do you want to delete the comment? Deleted comments cannot be re-created.",
+					"Delete Comment!",
+					Alert.YES|Alert.NO,
+					this, deleteCommentHandler);
+			}
+			
+			private function resetSkin():void
+			{
+				//commentContainer.setStyle("skinClass", com.skins.PostSkin);
+				data.incomingNewComment = false;
+			}
+			
+			private function setMouseOver():void
+			{
+				if (user.id == data.createdByObj.id)
+				{
+					deleteComment.visible = deleteComment.includeInLayout = true;
+					commentTime.visible = commentTime.includeInLayout = false;
+				}
+								
+			}
+			
+			private function setMouseOut():void
+			{
+				if (user.id == data.createdByObj.id)
+				{
+					
+					deleteComment.visible = deleteComment.includeInLayout = false;
+					commentTime.visible = commentTime.includeInLayout = true;
+				}
+			}
+			
+			
+			private var downloadAttachmentPlayer:GIFPlayer = null;
+			
+			public function loadImage():void 
+			{
+				var uiComp:UIComponent = null;
+				if(downloadAttachmentPlayer != null)
+					downloadAttachmentPlayer.play();
+				else
+				{
+					downloadAttachmentPlayer = new GIFPlayer();
+					uiComp = new UIComponent();
+					uiComp.addChild(downloadAttachmentPlayer);
+					downloadAttachmentPlayer.addEventListener(GIFPlayerEvent.COMPLETE, loadDownloadImageComplete);	    
+					downloadAttachmentPlayer.load(new URLRequest("assets/images/loading-small.gif"));
+					downloadAttachmentProgress.addChild(uiComp);
+				}
+			}
+			
+			public function unLoadImage():void 
+			{
+				downloadAttachmentPlayer.stop();
+			}
+			
+			public function loadDownloadImageComplete(e:Event):void {
+				    downloadAttachmentPlayer.play();
+			}
+			
+			public function setCommentSkin(data:Object):void
+			{
+				if (data.incomingNewComment)
+				{
+					commentContainer.setStyle("backgroundColor", "0xffffcc");
+					addEffect.play();
+				}
+				else
+					commentContainer.setStyle("backgroundColor", "0xffffff");
+	
+			}
+			
+			public function resetCommentSkin():void
+			{
+				if (data.incomingNewComment)
+				{
+					data.incomingNewComment = false;
+					setCommentSkin(data);
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	<s:states>
+		<s:State name="normal" />
+		<s:State name="selected" />
+		<s:State name="hovered" />
+	</s:states>
+	
+	<s:SkinnableContainer width="100%" minHeight="10" id="commentContainer" mouseOver="resetCommentSkin();" click="setMouseOver();">
+		<s:layout>
+			<s:VerticalLayout />
+		</s:layout>
+		
+		<s:HGroup width="100%">
+			<s:HGroup paddingTop="5" paddingLeft="5" paddingBottom="5" paddingRight="5">
+				<s:Image id="commentAvatar" skinClass="com.skins.CommentAvatarSkin"  />
+			</s:HGroup>
+			<s:VGroup width="100%">
+				<s:HGroup width="100%" height="15">
+					<s:Label id="commentAuthorName" paddingTop="8" styleName="postAuthorName" textAlign="left"/>
+					<s:HGroup id="commentTimeGroup" width="100%" paddingTop="5" paddingRight="5" horizontalAlign="right">
+						<s:Label id="commentTime" styleName="textColorBlack" verticalAlign="bottom" textAlign="right" />
+					</s:HGroup>
+					<s:Image id="deleteComment" horizontalAlign="right" source="assets/images/delete_hover.png"
+							  useHandCursor="true" buttonMode="true"
+							  click="deleteCommentFunc();" />
+					
+				</s:HGroup>
+				<mx:Text id="commentText"
+						 width="100%"
+						 styleName="textNormal" mouseChildren="true" mouseEnabled="true" />
+				
+			</s:VGroup>
+		</s:HGroup>
+		<s:Group width="100%" height="20" id="commentAttachmentGroup" visible="false" includeInLayout="false">
+			<s:Line left="0" top="1" right="0">		
+				<s:stroke>
+					<s:SolidColorStroke color="0xdfdfdf" />
+				</s:stroke>
+			</s:Line>
+			<s:HGroup id="attachmentNameGroup" paddingTop="5">
+				<s:Image height="15" verticalAlign="middle" source="assets/images/attach_small.png"  />
+				<s:Label height="15" id="commentAttachmentText" useHandCursor="true" buttonMode="true"
+						 verticalAlign="middle" styleName="textAttachment" />	
+			</s:HGroup>
+			<s:HGroup id="downloadProgressGroup" horizontalAlign="right" verticalAlign="middle"
+					  visible="false" includeInLayout="false" >
+				<mx:VBox id="downloadAttachmentProgress" horizontalAlign="left" paddingRight="15" 
+						 paddingBottom="5"
+						 height="15" />
+				<s:Label text="opening attachment..." />
+			</s:HGroup>
+			
+		</s:Group>
+		<s:Line width="100%" left="0" right="0">		
+			<s:stroke>
+				<s:SolidColorStroke color="0xdfdfdf" weight="1" />
+			</s:stroke>
+		</s:Line>
+	</s:SkinnableContainer>
+		
+	<!--<s:HGroup width="100%" minHeight="10" id="commentContainer" mouseOver.hovered="setMouseOver();" mouseOut.hovered="setMouseOut();">
+	-->
+	<!--
+	<s:HGroup width="100%" minHeight="10" id="commentContainer" click="setMouseOver();">
+		<s:HGroup>
+			<s:Image id="commentAvatar" skinClass="com.skins.CommentAvatarSkin" />	
+		</s:HGroup>
+		
+		<s:VGroup width="100%" gap="-10">
+			<s:HGroup width="100%" depth="3">
+				<s:Label width="100%" id="commentAuthorName" height="20" paddingTop="5" styleName="postAuthorName" textAlign="left"/>			
+				<s:HGroup height="42" gap="-40">
+					<s:Label id="commentTime" styleName="textColorGray" verticalAlign="top"
+							 textAlign="right" depth="2" />
+					<s:Image width="100%" id="deleteComment" horizontalAlign="right" source="assets/images/delete_hover.png"
+							 useHandCursor="true" buttonMode="true"
+							 click="deleteCommentFunc();" depth="1" visible="false" includeInLayout="false" />
+				</s:HGroup>
+			</s:HGroup>
+			<s:VGroup width="100%" depth="4">
+				<mx:Text id="commentText"
+							 width="100%"
+						 styleName="textNormal" />
+		
+			<s:Group width="100%" height="20" id="commentAttachmentGroup" visible="false" includeInLayout="false">
+				<s:Line left="0" top="1" right="0">		
+					<s:stroke>
+						<s:SolidColorStroke color="0xfcfcfc" />
+					</s:stroke>
+				</s:Line>
+				<s:HGroup width="100%" height="30" paddingTop="3" verticalAlign="middle">
+					<s:HGroup id="attachmentNameGroup">
+						<s:Image height="15" verticalAlign="middle" source="assets/images/attach_small.png"  />
+						<s:Label height="15" id="commentAttachmentText" useHandCursor="true" buttonMode="true"
+								 verticalAlign="middle" styleName="textAttachment" />	
+					</s:HGroup>
+					<s:HGroup id="downloadProgressGroup" horizontalAlign="right" verticalAlign="middle"
+							  visible="false" includeInLayout="false" >
+						<mx:VBox id="downloadAttachmentProgress" horizontalAlign="left" paddingRight="15" 
+								 paddingBottom="5" creationComplete="loadImage()"
+								 height="15" />
+						<s:Label text="opening attachment..." />
+					</s:HGroup>
+				</s:HGroup>
+			</s:Group>
+			<s:Line width="100%" left="0" right="0">		
+				<s:stroke>
+					<s:SolidColorStroke color="0xcccccc" weight="1" />
+				</s:stroke>
+			</s:Line>
+			</s:VGroup>
+	</s:VGroup>
+	</s:HGroup>
+	-->
+</s:ItemRenderer>

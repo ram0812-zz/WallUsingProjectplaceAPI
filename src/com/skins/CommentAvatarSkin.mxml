@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Skin xmlns:fx="http://ns.adobe.com/mxml/2009"
+		xmlns:s="library://ns.adobe.com/flex/spark"
+		xmlns:fb="http://ns.adobe.com/flashbuilder/2009"
+		alpha.disabled="0.5" >
+	
+	<fx:Metadata>[HostComponent("spark.components.Image")]</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import mx.events.FlexEvent;
+			import mx.events.ResizeEvent;
+			private var cornerRadius:Number = 10;
+			override protected function updateDisplayList(unscaledWidth:Number, unscaledHeight:Number) : void
+			{
+				var cr:Number = getStyle("cornerRadius");
+				if (cornerRadius != cr)
+				{
+					cornerRadius = cr;
+					background.radiusX = cornerRadius;
+					bmpMask.setStyle("cornerRadius", cornerRadius);
+				}
+				super.updateDisplayList(unscaledWidth, unscaledHeight);
+			}
+		]]>
+	</fx:Script>
+	
+	<s:states>
+		<s:State name="uninitialized" />
+		<s:State name="loading"/>
+		<s:State name="ready" />
+		<s:State name="invalid" />
+		<s:State name="disabled" />
+	</s:states>
+	
+	<s:Rect id="background" left="0" top="0" right="0" bottom="0">
+		<s:filters>
+			<s:DropShadowFilter 
+				blurX="3" blurY="3" 
+				alpha="0.32" 
+				distance="2" 
+				angle="90"                 
+				/>
+		</s:filters>
+		<s:fill>
+			<s:SolidColor color="0xffffff"/>
+		</s:fill>
+	</s:Rect>
+	
+	
+	<!-- layer 1: border -->
+	<s:Rect left="0" right="0" top="0" bottom="0">
+		<s:stroke>
+			<s:SolidColorStroke color="0xdddddd" weight="1"/>
+		</s:stroke>
+	</s:Rect>
+	
+	<!--- Primary image display skin part. -->
+	<s:BitmapImage id="imageDisplay" left="2" top="2" right="2" bottom="2">
+		<s:mask>
+			<s:BorderContainer id="bmpMask" cornerRadius="10"
+							   width="{imageDisplay.width}" height="{imageDisplay.height}" />
+		</s:mask>
+	</s:BitmapImage>
+	
+</s:Skin>

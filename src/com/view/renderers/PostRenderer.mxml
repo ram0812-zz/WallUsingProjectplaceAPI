@@ -1,0 +1,664 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:ItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx"
+				implements="mx.core.IFactory"
+				xmlns:view="com.view.*"
+				xmlns:components="com.components.*"	
+			    autoDrawBackground="false"
+			    addedEffect="{addEffect}"
+				>
+	<fx:Declarations>
+		<fx:XML id="menuData">
+			<xmlRoot>
+				<menuitem type="copy_link" label="Copy Link"/>
+				<menuitem type="delete" label="Delete"/>
+			</xmlRoot>
+		</fx:XML>
+		<s:Fade id="addEffect" duration="1000" alphaFrom="0" alphaTo="1" />
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.api.UserInfo;
+			import com.components.AtRefSelector;
+			import com.components.LikedUsersPopUp;
+			import com.components.NotifyUsersPopUp;
+			import com.ppstatic.Config;
+			import com.skins.PostSkin;
+			import com.utils.ImageCacheManager;
+			import com.utils.Utils;
+			
+			import flash.net.dns.AAAARecord;
+			
+			import flashx.textLayout.compose.TextFlowLine;
+			import flashx.textLayout.elements.TextFlow;
+			
+			import mx.collections.ArrayCollection;
+			import mx.collections.ArrayList;
+			import mx.controls.Alert;
+			import mx.controls.Menu;
+			import mx.events.CloseEvent;
+			import mx.events.FlexEvent;
+			import mx.events.MenuEvent;
+			import mx.events.ResizeEvent;
+			
+			import spark.layouts.HorizontalLayout;
+			import spark.layouts.VerticalAlign;	
+			
+			private var user:Object = UserInfo.getUserObj();
+
+			private var notify:NotifyUsersPopUp;
+			private var liked:LikedUsersPopUp;	
+			
+			private var attachment:Boolean = false; 
+			private var file:File;
+			
+			[Bindable]
+			private var atReferenceIds:Array = new Array();
+			private var atReferenceObjects:ArrayCollection = new ArrayCollection();
+			
+			private var atRefSel:AtRefSelector;
+			
+			public function newInstance():* {
+				return new PostRenderer();
+			}
+		
+			override public function set data(value:Object):void {
+				if (value == null || (data && data.id == value.id)) { return; }
+				super.data = value;
+
+				setData();
+				//dispatchEvent(new FlexEvent(FlexEvent.DATA_CHANGE));
+				//invalidateProperties();
+
+				this.addEventListener(Event.REMOVED_FROM_STAGE, removeEventListeners);
+			}	
+
+			private function setData():void
+			{
+				setPostSkin(data);
+				projectName.text = data.projectObj.name;
+				postText.htmlText = Utils.makeLinksOfUrls(data.message);
+				//postTextFull.htmlText = Utils.makeLinksOfUrls(value.message);
+				postTime.text = Utils.convertTime(data.createdTime);
+				
+				if (data.likedByObj && data.likedByObj.length)
+				{
+					likeCount.visible = true;
+					likeCountText.text = data.likedByObj.length;
+					var likeText:String = "Like"
+					for each(var obj:Object in data.likedByObj){
+						if (obj.user_id == user.id){
+							likeText = "Unlike";
+							break;
+						}
+					}					
+					likePost.text = likeText;
+					//if (value.incomingLikePost)
+					//	likeCountText.styleName = "textColorOrange";
+					//else
+					likeCountText.styleName = "textColorGray"
+				}
+				else
+				{
+					likeCount.visible = false;
+					likePost.text = "Like";
+				}
+				
+				postAuthorName.text = data.createdByObj.name;
+				attachmentText.text = "";
+				attachmentGroup.visible = attachmentGroup.includeInLayout = data.attachmentObj;
+				
+				if (data.attachmentObj){
+					attachmentText.text = data.attachmentObj.name;
+					attachmentText.addEventListener(MouseEvent.CLICK, 
+						function(e:MouseEvent):void{ 
+							downloadFile(data.attachmentObj.id, data.attachmentObj.name);
+						});
+				}
+				
+				if (data.comments)
+					commentList.dataProvider = getLastTwoComments(data.comments);				
+				setShowCommentCount(data.numberOfComments);
+				//postAvatar.source = Utils.setAvatar(data.createdByObj.id, 70);
+				Utils.setAvatar(postAvatar, data.createdByObj.id, 70);
+				//commentContainer.visible = commentContainer.includeInLayout = commentList.dataProvider.length > 0;
+				addCommentAvatar.includeInLayout = false;
+				commentBox.text = data.newCommentText;
+				if (data.newCommentText)
+				{
+//					var textFlow:TextFlow = commentBox.textFlow;
+//					textFlow.interactionManager.selectRange(commentBox.text.length, commentBox.text.length+1);
+//					textFlow.interactionManager.setFocus();	
+					//commentBox.setFocus();
+//					var calculatedHeight:Number = commentBox.scroller.viewport.contentHeight + 2;
+//					if (calculatedHeight > 30)
+//						data.commentBoxHeight = calculatedHeight;
+				}
+				else
+					setCommentControlBoxVisibility(false);
+				setDeletePostIcon();
+				addEventListeners();
+			}
+			
+			private function setShowCommentCount(post_count:Number):void{
+				showCommentLabel.text = String(post_count);
+			}
+			
+			private function downloadFile(documentId:String, name:String):void{
+				loadImage(true);
+				downloadProgressGroup.visible = downloadProgressGroup.includeInLayout = true;
+				attachmentNameGroup.visible = attachmentNameGroup.includeInLayout = false;
+				ProjectPlaceWall.apirequest.doDownload(function(e:Event):void{
+					var tempFileObj:File = Config.getFileStorageDir().resolvePath(name);
+					Utils.writeToFile(tempFileObj, e.currentTarget.data);		
+					tempFileObj.openWithDefaultApplication();
+					
+					unLoadImage(true);
+					downloadProgressGroup.visible = downloadProgressGroup.includeInLayout = false;
+					attachmentNameGroup.visible = attachmentNameGroup.includeInLayout = true;
+				},
+					function(e:Event):void{}, documentId);
+			}
+			
+			private function addComment(e:Event):void
+			{
+				loadImage();
+				var text:String = commentBox.text;
+				text = text.replace(/\t/g, '    ')
+				var atRefObjects:ArrayCollection = this.atRefSel.getAtRefObjects();
+				
+				if (atRefObjects.length)
+				{
+					for each(var refrence:Object in atRefObjects){
+						var index:Number = text.search(String(refrence.input_name));
+						if (index != -1){
+							text = text.replace(String(refrence.input_name), '@' + refrence.id);
+							atReferenceIds.push(refrence.id);
+						}
+					}
+				}
+				
+				this.parentApplication.conv.addComment(data.id, text, atReferenceIds, file, attachment, addCommentResponse)
+				addCommentButton.includeInLayout = addCommentButton.visible = false;
+				addCommentProgress.includeInLayout = addCommentProgress.visible = true;
+			}
+			
+			private function addCommentResponse(comment:Object):void
+			{
+				unLoadImage();
+				if (comment != null)
+				{
+					atReferenceIds = new Array();
+					this.parentApplication.conv.addCommentToContainer(comment, data.id, commentBox.text);
+					setShowCommentCount(data.numberOfComments);
+					if (commentList.dataProvider.length == 2) // when only the last two comments are visible
+						commentList.dataProvider = getLastTwoComments(data.comments);
+					else
+						commentList.dataProvider = data.comments;//.addItem(data.commentObj.last_post);
+					if (data.comments.length)
+					{
+						commentList.visible = commentList.includeInLayout = true;
+					}
+					commentBox.text = "";
+					addCommentButton.enabled = false;
+					deleteCommentAttachment();
+					addCommentButton.includeInLayout = addCommentButton.visible = true;
+					addCommentProgress.includeInLayout = addCommentProgress.visible = false;	
+					setCommentControlBoxVisibility(false);
+					setCommentBoxHeight();
+				}
+				else
+				{
+					Alert.show("Your comment was not added.");
+					addCommentButton.includeInLayout = addCommentButton.visible = true;
+					addCommentProgress.includeInLayout = addCommentProgress.visible = false;	
+				}
+			}
+			
+			protected function getLastTwoComments(allComments:ArrayList):ArrayList
+			{
+				if (allComments.length > 2 && data.showAllComments == false)
+				{
+					var lastTwoComments:ArrayList = new ArrayList(allComments.toArray().slice(
+						allComments.length-2,
+						allComments.length));
+					return lastTwoComments;
+				}
+				return allComments;
+			}
+			
+			protected function toggleComments(e:Event):void
+			{
+				if (data.showAllComments)
+					data.showAllComments = false;
+				else
+					data.showAllComments = true;
+				
+				if (commentList.dataProvider.length == data.comments.length)
+					commentList.dataProvider = getLastTwoComments(data.comments);
+				else
+					commentList.dataProvider = data.comments;
+				if (commentList.dataProvider.length == 0)
+				commentBox.setFocus();
+				//commentList.invalidateProperties();
+				//invalidateProperties();
+			}
+			
+			private function setCommentBoxHeight(e:Event = null):void 
+			{
+				var minHeight:Number = 20;
+				data.commentBoxHeight = minHeight;
+				
+				if (commentBox.text)
+				{
+					setAtRefObj(true);
+					addCommentButton.enabled = true;
+					setCommentControlBoxVisibility(true);
+					addCommentAvatar.includeInLayout = addCommentAvatar.visible = true;
+					if (!addCommentAvatar.source)
+						Utils.setAvatar(addCommentAvatar, user.id, 30);
+				}
+				else
+				{
+					setAtRefObj(false);
+					addCommentButton.enabled = false;
+					setCommentControlBoxVisibility(false);
+					addCommentAvatar.includeInLayout = addCommentAvatar.visible = false;
+					commentBox.resetHeight(minHeight);
+				}
+				data.newCommentText = commentBox.text;
+			}
+			
+			private function attachFile(e:Event):void
+			{
+				file = new File();
+				file.addEventListener(Event.SELECT, onSelectAttachment);
+				file.browseForOpen('Browse for Attachment');
+			}
+			
+			private function onSelectAttachment(e:Event):void
+			{
+				if ((file.size/(1024*1024)) <= 50)
+				{
+					attachment = true;
+					var denominator:Number = 1024*1024;
+					var fileSizeText:String = "MB";
+					if (file.size/denominator < 1)
+					{
+						fileSizeText = "KB";
+						denominator = 1024;
+					}
+					commentAttachmentFile.text = file.name + " (" + Utils.formatDecimals(file.size/(denominator), 2) + " " + fileSizeText + ")";
+					commentAttachmentContainer.includeInLayout = commentAttachmentContainer.visible = true;	
+				}
+				else
+					Alert.show("The file you want to upload is big!\nYou can only upload documents upto 50 MB");
+			}
+			private function deleteCommentAttachment():void
+			{
+				attachment = false;
+				commentAttachmentFile.text = "";
+				commentAttachmentContainer.includeInLayout = commentAttachmentContainer.visible = false;
+			}
+			
+			protected function toggleLikePost():void
+			{
+				var isLiked:Boolean = true;
+				
+				if (data.likedByObj)
+				{
+					for each(var obj:Object in data.likedByObj)
+					{
+						if (obj.user_id == user.id)
+						{
+							isLiked = false;
+							break;
+						}
+					}
+				}
+				this.parentApplication.conv.toggleLikePost(data.id, user.id, isLiked);
+			}
+			
+			protected function likeCallBack(isLiked:Boolean):void
+			{}
+			
+			protected function deletePostFunc(e:Event):void
+			{
+				Alert.show("Do you want to delete the conversation? Deleted conversations cannot be re-created.",
+					"Delete Conversation!",
+					Alert.YES|Alert.NO,
+					this, deletePostHandler);
+			}
+			
+			protected function deletePostHandler(event:CloseEvent):void
+			{
+				if(event.detail == Alert.YES)
+				{
+					this.parentApplication.conv.deletePost(data.id);
+				}
+			}
+			
+			protected function showLikedUsers(e:Event):void
+			{
+				this.liked = new LikedUsersPopUp(likeCount.parentApplication.parent, data.likedByObj);
+				data.incomingLikePost = false;
+				likeCountText.styleName = "textColorGray";
+			}
+			
+			private function showNotifyUsers(e:Event):void
+			{
+				notify = new NotifyUsersPopUp(commentBox.parentApplication.parent, showNotifyCallBack);
+			}
+			
+			private function showNotifyCallBack(selectedItem:Object):void
+			{
+				commentBox.text = commentBox.text + " " + String(selectedItem.input_name) + " ";	
+			}
+			
+			import org.bytearray.gif.events.GIFPlayerEvent;
+			import org.bytearray.gif.player.GIFPlayer;
+			import mx.core.UIComponent;
+			
+			private var addCommentPlayer:GIFPlayer = null;
+			private var downloadAttachmentPlayer:GIFPlayer = null;
+			
+			public function loadImage(downloadAttachment:Boolean = false):void 
+			{
+				var uiComp:UIComponent = null;
+				
+				
+				if (downloadAttachment)
+				{
+					if (downloadAttachmentPlayer)
+						downloadAttachmentPlayer.play();
+					else
+					{
+						uiComp = new UIComponent();
+						downloadAttachmentPlayer = new GIFPlayer();
+						uiComp.addChild(downloadAttachmentPlayer);
+						downloadAttachmentPlayer.addEventListener(GIFPlayerEvent.COMPLETE, loadDownloadImageComplete);	    
+						downloadAttachmentPlayer.load(new URLRequest("assets/images/loading-small.gif"));
+						downloadAttachmentProgress.addChild(uiComp);
+					}		
+				}
+				else
+				{
+					if (addCommentPlayer)
+						addCommentPlayer.play();
+					else
+					{
+						uiComp = new UIComponent();
+						addCommentPlayer = new GIFPlayer();
+						uiComp.addChild(addCommentPlayer);
+						addCommentPlayer.addEventListener(GIFPlayerEvent.COMPLETE, loadImageComplete);	    
+						addCommentPlayer.load(new URLRequest("assets/images/loading-small.gif"));
+						addCommentProgress.addChild(uiComp);
+					}
+				}
+			}
+			
+			public function loadDownloadImageComplete(e:Event):void {
+				    downloadAttachmentPlayer.play();
+			}
+			
+			public function unLoadImage(downloadAttachment:Boolean = false):void 
+			{
+				if (downloadAttachment)
+					downloadAttachmentPlayer.stop();
+				else
+					addCommentPlayer.stop();	
+			}
+			public function loadImageComplete(e:Event):void {
+				    addCommentPlayer.play();
+			}
+			
+			private function setPostSkin(data:Object):void
+			{
+				if (data.incomingNewPost)
+				{
+					postContainer.setStyle("skinClass", com.skins.NewPostSkin);
+					commentList.setStyle("contentBackgroundColor", "0xffffcc");
+					postContainer.addEventListener(MouseEvent.MOUSE_OVER, resetPostSkin);
+				}
+				else
+				{
+					postContainer.setStyle("skinClass", Class(com.skins.PostSkin));
+					commentList.setStyle("contentBackgroundColor", "0xffffff");
+					postContainer.removeEventListener(MouseEvent.MOUSE_OVER, resetPostSkin);
+				}
+			}
+			private function resetPostSkin(e:Event):void
+			{
+				if (data.incomingNewPost)
+				{
+					data.incomingNewPost = false;
+					setPostSkin(data);
+				}
+			}
+			
+			private function setAtRefObj(added:Boolean):void
+			{
+				if (added)
+				{
+					if (!atRefSel)
+					{
+						atRefSel = new AtRefSelector(commentBox);
+					}
+				}
+				else
+				{
+					atRefSel = null;
+				}
+			}
+			
+			private function setDeletePostIcon():void
+			{
+				if (user.id == data.createdByObj.id)
+				{
+					deletePost.visible = deletePost.includeInLayout = true;
+					//postTime.visible = postTime.includeInLayout = false;
+				}
+				else
+				{
+					deletePost.visible = deletePost.includeInLayout = false;
+					//postTime.visible = postTime.includeInLayout = false;
+				}	
+				
+			}
+			
+			private function addEventListeners():void
+			{
+				deletePost.addEventListener(MouseEvent.CLICK, deletePostFunc, false, 0, true);
+				showCommentLabel.addEventListener(MouseEvent.CLICK, toggleComments, false, 0, true);
+				showCommentImage.addEventListener(MouseEvent.CLICK, toggleComments, false, 0, true);
+				likeImage.addEventListener(MouseEvent.CLICK, showLikedUsers, false, 0, true);
+				likeCountText.addEventListener(MouseEvent.CLICK, showLikedUsers, false, 0, true);
+				commentBox.addEventListener(Event.CHANGE, setCommentBoxHeight, false, 0, true);
+				addCommentButton.addEventListener(MouseEvent.CLICK, addComment, false, 0, true);
+			}
+			
+			private function removeEventListeners(e:Event):void
+			{
+				deletePost.removeEventListener(MouseEvent.CLICK, deletePostFunc, false);
+				showCommentLabel.removeEventListener(MouseEvent.CLICK, toggleComments, false);
+				showCommentImage.removeEventListener(MouseEvent.CLICK, toggleComments, false);
+				likeImage.removeEventListener(MouseEvent.CLICK, showLikedUsers, false);
+				likeCountText.removeEventListener(MouseEvent.CLICK, showLikedUsers, false);
+				commentBox.removeEventListener(Event.CHANGE, setCommentBoxHeight, false);
+				addCommentButton.removeEventListener(MouseEvent.CLICK, addComment, false);
+				this.removeEventListener(Event.REMOVED_FROM_STAGE, removeEventListeners, false);			
+			}
+			
+			private function setCommentControlBoxVisibility(visible:Boolean):void
+			{
+				commentControlBox.visible = commentControlBox.includeInLayout = visible;
+				if (commentControlBox.visible)
+				{
+					commentAttachmentLabel.addEventListener(MouseEvent.CLICK, attachFile);
+					commentAttachmentImage.addEventListener(MouseEvent.CLICK, attachFile);
+					commentNotifyLabel.addEventListener(MouseEvent.CLICK, showNotifyUsers);
+					commentNotifyImage.addEventListener(MouseEvent.CLICK, showNotifyUsers);		
+				}
+				else
+				{
+					commentAttachmentLabel.removeEventListener(MouseEvent.CLICK, attachFile);
+					commentAttachmentImage.removeEventListener(MouseEvent.CLICK, attachFile);
+					commentNotifyLabel.removeEventListener(MouseEvent.CLICK, showNotifyUsers);
+					commentNotifyImage.removeEventListener(MouseEvent.CLICK, showNotifyUsers);
+				}
+			}
+			/*
+			private function createAndShowMenu(event:MouseEvent):void 
+			{
+				var userMenu:Menu = Menu.createMenu(null, menuData, false);
+				userMenu.labelField="@label"
+				userMenu.addEventListener(MenuEvent.ITEM_CLICK, 
+					menuItemClickInfo);
+				var pt:Point = new Point( deletePost.x, deletePost.y );
+				var global:Point = this.parentApplication.parent.localToGlobal( pt );
+				
+				
+				var p:Point = stage.nativeWindow.globalToScreen(new Point(deletePost.x, deletePost.y));
+				userMenu.show(p.x, p.y);
+			}
+			
+			// The event listener for the itemClick event.
+			private function menuItemClickInfo(event:MenuEvent):void
+			{
+				if (event.item.@type == "copy_link")
+				{
+				}
+				else if (event.item.@type == "delete") 
+				{
+					deletePostFunc();
+				}
+				
+			}*/
+			
+		]]>
+	</fx:Script>
+
+	<s:states>
+		<s:State name="normal" />
+		<s:State name="selected" />
+		<s:State name="hovered" />
+	</s:states>
+
+	
+	<!--<s:VGroup width="100%" mouseover.hovered="setMouseOver();" mouseout.hovered="setmouseout();">
+	-->	
+	<s:VGroup width="100%">
+	<s:SkinnableContainer id="postContainer" skinClass="com.skins.PostSkin" width="100%">
+		<s:layout>
+			<s:HorizontalLayout />
+		</s:layout>
+		<s:HGroup width="85" verticalAlign="middle" paddingLeft="10" paddingRight="10" paddingTop="10">
+			<s:Image verticalAlign="middle" horizontalAlign="center" skinClass="com.skins.PostAvatarSkin" id="postAvatar"   />	
+		</s:HGroup>
+		<!--
+		<s:VGroup width="100%" gap="-10">
+		-->	
+		<s:VGroup width="100%">
+			<s:HGroup width="100%" paddingTop="4" paddingRight="2" depth="3" height="42">	
+				<s:Label id="postAuthorName" paddingTop="10" styleName="postAuthorName" textAlign="left"/>
+				<s:Label id="postTime" width="100%" paddingTop="8" depth="2" styleName="textColorGray" textAlign="right" />
+				<s:Label id="separator" text=" - " paddingTop="8" styleName="textColorBlack"  textAlign="right"/>
+				<s:Label id="projectName" paddingTop="8" styleName="textColorBlack" textAlign="right"/>
+				<!--<s:HGroup gap="-40">-->
+					<s:HGroup id="deletePostGroup" paddingRight="8" paddingTop="6">
+					<s:Image width="100%" id="deletePost" buttonMode="true" depth="1"
+							 horizontalAlign="right" verticalAlign="middle" source="assets/images/delete.png"
+							 useHandCursor="true"/>	
+				</s:HGroup>
+			</s:HGroup>
+			<s:VGroup width="100%" paddingBottom="10" paddingRight="10" gap="0" depth="4">
+				
+				<mx:Text id="postText"				 
+						 width="100%"
+						 styleName="textNormal" 
+						  />								
+				<s:HGroup id="attachmentGroup" width="100%" gap="5" paddingTop="5" paddingLeft="5" paddingBottom="5" paddingRight="5">
+					<s:HGroup id="attachmentNameGroup">
+						<s:Image verticalAlign="middle" source="assets/images/attach.png" />
+						<s:Label height="15" verticalAlign="middle" useHandCursor="true" buttonMode="true"
+								 id="attachmentText" styleName="textAttachment" />		
+					</s:HGroup>
+					<s:HGroup id="downloadProgressGroup" horizontalAlign="right" verticalAlign="middle"
+							  visible="false" includeInLayout="false" >
+						<mx:VBox id="downloadAttachmentProgress" horizontalAlign="left" paddingRight="15" paddingBottom="5"
+								 height="15" />
+						<s:Label text="opening attachment..." />
+					</s:HGroup>
+				</s:HGroup>
+
+				<s:Line width="100%" left="0" right="10">		
+					<s:stroke>
+						<s:SolidColorStroke color="0xdfdfdf" weight="1" />
+					</s:stroke>
+				</s:Line>
+
+				<s:HGroup width="100%" paddingTop="5" paddingLeft="5" paddingBottom="5" paddingRight="5">
+					<mx:Image id="showCommentImage" verticalAlign="middle" source="assets/images/comments.png" 
+							  useHandCursor="true" buttonMode="true" mouseChildren="false" />
+					<s:Label id="showCommentLabel" styleName="textColorGray" verticalAlign="middle" useHandCursor="true" buttonMode="true" mouseChildren="false" />
+					<s:Label id="likePost" styleName="textColorGray" verticalAlign="middle" paddingLeft="10" useHandCursor="true" buttonMode="true" mouseChildren="false" click="toggleLikePost()" />
+					<s:HGroup id="likeCount" verticalAlign="middle" width="100%" horizontalAlign="right">
+						<mx:Image id="likeImage" source="assets/images/like.png" verticalAlign="top" useHandCursor="true" buttonMode="true" />
+						<mx:VBox width="14" height="14" cornerRadius="4" backgroundColor="0xcc0022">
+							<s:Label width="100%" height="100%" 
+									 id="likeCountText" styleName="textColorGray" color="0xffffff"
+									 textAlign="center" verticalAlign="middle"
+									 useHandCursor="true" buttonMode="true" mouseChildren="false"
+									 />						
+						</mx:VBox>
+						</s:HGroup>
+				</s:HGroup>
+			
+				<s:Line width="100%" left="0" right="0">		
+					<s:stroke>
+						<s:SolidColorStroke color="0xdfdfdf" weight="1" />
+					</s:stroke>
+				</s:Line>
+
+				<s:List id="commentList" width="100%" borderVisible="false"
+							itemRenderer="com.view.renderers.CommentRenderer" contentBackgroundColor="0xffffff"
+							>
+					<s:layout>
+						<s:VerticalLayout variableRowHeight="true" horizontalAlign="justify" gap="0"/>
+					</s:layout>
+				</s:List>						
+			
+				<s:VGroup width="100%" paddingTop="5">
+					<s:HGroup width="100%">
+						<s:Image width="30" id="addCommentAvatar" enabled="false" />
+						<components:DynamicTextArea width="100%" id="commentBox"
+												 borderColor="0xdfdfdf" contentBackgroundColor="0xffffff" minHeight="20"/>	
+					</s:HGroup>
+					<s:HGroup id="commentAttachmentContainer" visible="false" includeInLayout="false" height="20" gap="4">
+						<s:Label id="commentAttachmentFile" height="15" verticalAlign="middle" />
+						<s:Image source="assets/images/attachment_delete.png" height="15" useHandCursor="true" buttonMode="true"
+								  click="deleteCommentAttachment()" verticalAlign="middle" />
+					</s:HGroup>
+					<s:HGroup width="100%" id="commentControlBox" verticalAlign="middle" >
+						<s:Image id="commentAttachmentImage" verticalCenter="10" source="assets/images/attach.png" useHandCursor="true" buttonMode="true"
+								  />
+						<s:Label id="commentAttachmentLabel" verticalAlign="middle" text="Attach" styleName="textColorGray" useHandCursor="true" buttonMode="true" />		
+						<s:Image id="commentNotifyImage" verticalAlign="middle" source="assets/images/notify.png" useHandCursor="true" buttonMode="true" />
+						<s:Label id="commentNotifyLabel" verticalAlign="middle" text="Notify" styleName="textColorGray" useHandCursor="true" buttonMode="true" />		
+						<s:HGroup width="100%" horizontalAlign="right" verticalAlign="middle">
+							<mx:VBox id="addCommentProgress" horizontalAlign="left" paddingRight="15" paddingBottom="5"
+									 height="15" visible="false" includeInLayout="false" />	
+							<s:Button id="addCommentButton" styleName="addButton" label="Add" enabled="false" />			
+						</s:HGroup>
+					</s:HGroup>
+				</s:VGroup>
+	
+			</s:VGroup>
+		</s:VGroup>
+	</s:SkinnableContainer>
+	</s:VGroup>
+</s:ItemRenderer>
+
+

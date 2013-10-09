@@ -1,0 +1,107 @@
+/* CSS file */
+@namespace s "library://ns.adobe.com/flex/spark";
+@namespace mx "library://ns.adobe.com/flex/mx";
+s|Application {
+	backgroundColor:#ededed;
+}
+
+.appBackground {
+	backgroundColor:#ededed;
+}
+
+.postListBackground {
+	contentBackgroundColor:#ededed;
+}
+
+.iPhoneScroll {
+	skinClass: ClassReference("com.skins.VScrollBarSkin");
+	fixedThumbSize:true;
+}
+
+.appTitle{
+	font-size:17;
+	font-weight:bold;
+	font-style:normal;
+	text-align:center;
+	font-size:10;
+}
+
+.containerBackground {
+	backgroundColor:#ededed;
+	contentBackgroundColor:#ededed;
+}
+
+
+.postAuthorName {
+	font-weight:bold;
+	font-size:12;
+	color:#333333;
+}
+
+s|Button.addButton {
+	skinClass: ClassReference("com.skins.ButtonSkin");
+	color: #ffffff;
+	font-size: 12px;
+	font-weight: bold;
+}
+
+.textColorBlue {
+	color: #0198eb;
+	font-family:Arial;
+	font-size:10;
+}
+
+.textColorGray {
+	color: #808080;
+	font-family:Arial;
+	font-size:10;
+}
+
+.textColorGrayBold {
+	color: #808080;
+	font-family:Arial;
+	font-size:10;
+	font-weight:bold;
+}
+
+.textColorBlack {
+	color: #808080;
+	font-family:Arial;
+	font-size:10;
+}
+
+.textColorOrange {
+	color: #FFEC8B;
+	font-family:Arial;
+	font-size:10;
+	font-weight:bold;
+}
+
+.textAttachment {
+	color: #333333;
+	font-family:Arial;
+	font-size:12;
+}
+
+.dropDown {
+	font-family:Arial;
+	font-size:10;
+	font-style:normal;
+}
+
+.textNormal {
+	font-family:Arial;
+	font-size:12;
+	color:#333333;
+}
+
+.textInputColor {
+	backgroundColor: #000000;
+}
+
+.commentAttachmentGroup {
+	backgroundColor:#eeeeee;
+}
+global
+{
+}

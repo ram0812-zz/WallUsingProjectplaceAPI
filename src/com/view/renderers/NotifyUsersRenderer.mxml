@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:ItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx" 
+				xmlns:view="com.view.*"
+				implements="mx.core.IFactory"
+				autoDrawBackground="true"
+				click="clickHandler(event)"	
+				>
+	<fx:Script>
+		<![CDATA[
+			import com.api.UserProjects;
+			import com.hurlant.crypto.symmetric.NullPad;
+			import com.utils.Utils;
+			
+			import mx.controls.Alert;
+			import mx.collections.ArrayCollection;
+			import mx.events.ItemClickEvent;
+
+			private var projects:ArrayCollection = UserProjects.getProjects();
+
+			public function newInstance():* {
+			}
+			 
+			protected function clickHandler(evt:MouseEvent):void {
+				var e:ItemClickEvent = new ItemClickEvent(ItemClickEvent.ITEM_CLICK, true);
+				e.item = data;
+				e.index = itemIndex;
+				dispatchEvent(e);
+			}
+			
+			override public function set data(value:Object):void {
+				if (value == null) { return; }
+				super.data = value;
+				if (value.sort_name) //For users
+				{
+					Utils.setAvatar(notifyAvatar, value.id, 30);
+
+					//notifyAvatar.source = Utils.setAvatar(value.id, 30);
+					notifyName.text = value.sort_name;
+					//value.input_name = "@" + value.sort_name.replace(/ /g, "_")
+					projectName.text = ""
+				}
+				else //For project groups
+				{
+					notifyAvatar.source = "assets/images/members-groups_icon.png"
+					notifyName.text = value.name;
+					for (var i:Number = 0; i < projects.length; i++)
+					{
+						if (value.project_id == projects[i].id)
+						{
+							projectName.text = projects[i].name;
+						}
+					}
+					
+				}
+			}
+		]]>
+	</fx:Script>
+	
+	<s:states>
+		<s:State name="normal" />
+		<s:State name="hovered" />
+		<s:State name="selected" />
+	</s:states>
+	<!--
+	<s:Rect x="0" y="0"
+			height="100%" width="100%">
+		
+		<s:fill>
+			<s:LinearGradient>
+				<s:entries>
+					<mx:GradientEntry color.normal="0xfcfcfc" color.hovered="0xD6DEFF"/>
+				</s:entries>
+			</s:LinearGradient>
+		</s:fill>            
+	</s:Rect>
+	-->
+	<s:HGroup width="100%" paddingTop="5" paddingLeft="5" paddingBottom="5" paddingRight="5">
+		<s:Image id="notifyAvatar" skinClass="com.skins.CommentAvatarSkin" />
+		
+		<s:Label id="notifyName"
+					width="100%"
+				    verticalAlign="middle"	
+					height="30"
+					/>
+		<s:HGroup horizontalAlign="right" width="100%">
+			<s:Label id="projectName" styleName="textColorGray"
+					 width="100%"
+					 verticalAlign="middle"
+					 height="30"
+					 />	
+		</s:HGroup>
+	</s:HGroup>
+			
+</s:ItemRenderer>

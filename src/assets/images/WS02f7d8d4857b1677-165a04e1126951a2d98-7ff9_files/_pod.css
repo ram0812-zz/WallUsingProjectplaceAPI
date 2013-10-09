@@ -1,0 +1,116 @@
+/* 
+ * Registration mark
+ */
+.regmark{
+        font-size:60%;
+}
+
+/*
+ *  Adobe Help Pod
+ */
+#ahpod{
+	display:none;
+	z-index:99;
+        position:fixed;
+	background: #ffc;
+	bottom:0px;
+	width:300px;
+	right:16px;
+	padding:3px 10px 5px 10px;
+	display:inline;
+	border: solid 1px #666;
+	border-right: solid 2px #666;
+	border-bottom: solid 2px #666;
+	font-size:11px;
+}
+#ahpod_ie{
+	position:absolute;
+	display:inline;
+	background: #ffc;
+	bottom:0px;
+	right:15px;
+	width:300px;
+	padding:3px 6px 3px 6px;
+	border: solid 1px #666;
+	font-size:11px;
+	z-index:99;
+}
+
+#ahpod p,
+#ahpod_ie p{
+	margin:-2px 0 6px 0;
+	padding:0;
+}
+
+#podContent p{
+	color:#666;
+}
+#podContent ul{
+        margin:-3px 0 5px 20px;
+        padding:0;
+	color:#505050;
+}
+#podContent ul li{
+	margin-bottom: 0;
+}
+
+#podContent a{
+	text-decoration:none !important; 
+	font-weight: normal !important;
+}
+
+#podContent a:hover{
+	color:#900 !important; 
+}
+#podContent a:visited{
+        color:#007DD8 !important;
+}
+
+#ahpod #hidepod{ 
+        position:relative; 
+	top:2x;
+	left:282px; /* for Safari */
+	right:8px;
+}
+
+#ahpod #showpod{ 
+        visibility:hidden;
+        position:relative; 
+	top:2x;
+	left:-8px;
+}
+
+#ahpod #closepod {
+	position:relative;
+	top:1px;
+	left:253px;
+	border:1px solid #ddd;
+}
+#ahpod #closepod:hover {
+	border:1px solid #aaa;
+}
+
+#hidepod:hover,
+#showpod:hover,
+#closepod:hover{
+	cursor:pointer;
+}
+
+#podcollapsed{
+	z-index:99;
+        display:none;
+	position:absolute;
+	background: #ffc;
+	bottom:0px;
+	right:-8px;
+	padding:4px 8px 80px 2px;
+	border: solid 1px #666;
+}
+
+
+#ahpod_ie #hidepod{
+        position:absolute;
+        top: 2px;
+        right:8px;
+}
+
